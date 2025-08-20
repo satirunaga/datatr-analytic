@@ -1,3 +1,67 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+from io import BytesIO
+import re
+
+# -----------------------
+# Helpers
+# -----------------------
+
+def read_any(file):
+    """Baca file apapun (csv/excel)"""
+    name = file.name.lower()
+    if name.endswith(".csv"):
+        return pd.read_csv(file)
+    else:
+        return pd.read_excel(file)
+
+def coerce_date_series(s):
+    """Paksa kolom tanggal ke datetime"""
+    return pd.to_datetime(s, errors="coerce", dayfirst=True, infer_datetime_format=True)
+
+def normalize_numeric_series(s):
+    """Pastikan kolom numerik"""
+    return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
+def pick_column(df, candidates=None, patterns=None):
+    """Cari kolom dengan nama mirip"""
+    cols = [c.lower().strip() for c in df.columns]
+    if candidates:
+        for c in candidates:
+            if c.lower() in cols:
+                return df.columns[cols.index(c.lower())]
+    if patterns:
+        for pat in patterns:
+            for i, c in enumerate(cols):
+                if re.search(pat, c):
+                    return df.columns[i]
+    return None
+
+def extract_account_info(file):
+    """Ambil info Name & Account dari header file excel"""
+    try:
+        fbytes = file.getvalue()
+        f = BytesIO(fbytes)
+        df0 = pd.read_excel(f, header=None)
+        text = " ".join(df0.astype(str).fillna("").values.flatten().tolist())
+
+        # Cari Name:
+        name_match = re.search(r"Name:\s*([A-Z\s]+)", text, re.IGNORECASE)
+        name = name_match.group(1).strip() if name_match else ""
+
+        # Cari Account:
+        acc_match = re.search(r"Account:\s*([0-9]+[^\s]*)", text, re.IGNORECASE)
+        acc = acc_match.group(1).strip() if acc_match else ""
+
+        return acc, name
+    except Exception:
+        return "", ""
+
+# -----------------------
+# Main analysis
+# -----------------------
+
 def analyze_file(file, filename):
     # 1) Info Akun
     account_number, account_name = extract_account_info(file)
@@ -16,9 +80,7 @@ def analyze_file(file, filename):
     if not close_col:
         close_col = pick_column(df, candidates=["Time", "Open Time", "Datetime", "Date"])
     if not close_col:
-        st.error("❌ Tidak menemukan kolom tanggal CLOSE/TIME pada file ini.")
-        with st.expander("Kolom yang terbaca"):
-            st.write(list(df.columns))
+        st.error(f"❌ Tidak menemukan kolom tanggal CLOSE/TIME pada {filename}")
         return
 
     # 4) Deteksi kolom Profit/Commission/Swap
@@ -28,9 +90,7 @@ def analyze_file(file, filename):
     swap_col = pick_column(df, candidates=["Swap", "Storage", "Rollover"], patterns=[r"swap|roll"])
 
     if not profit_col:
-        st.error("❌ Tidak menemukan kolom Profit/P&L pada file ini.")
-        with st.expander("Kolom yang terbaca"):
-            st.write(list(df.columns))
+        st.error(f"❌ Tidak menemukan kolom Profit/P&L pada {filename}")
         return
 
     # 5) Parse tanggal & angka
@@ -54,7 +114,7 @@ def analyze_file(file, filename):
     )
 
     if per_day.empty:
-        st.warning("Tidak ada baris valid setelah parsing tanggal/angka.")
+        st.warning(f"Tidak ada baris valid setelah parsing {filename}")
         return
 
     # 7) Ringkasan
@@ -69,13 +129,14 @@ def analyze_file(file, filename):
     st.write(f"👤 **Nama Pemilik:** {account_name}")
     st.write(f"🏦 **Nomor Akun:** {account_number}\n")
 
-    st.write("📊 **Profit per hari (Net)**")
+    st.write("📊 **Ringkasan Profit (Net)**")
     st.write(f"🔥 **Profit harian terbesar (Net): {max_profit:.2f} pada {max_date}**")
     st.write(f"💰 **Total profit (Net): {total_profit:.2f}**")
     st.write(f"📈 **Persentase: {percentage:.2f} %**")
     st.write(f"✅ **Cek {max_date} (Net): {max_profit:.2f}**")
 
     # 👉 Tambah tampilkan tabel harian
+    st.write("📊 **Detail Profit Harian**")
     st.dataframe(per_day, use_container_width=True)
 
     # 9) Download Excel per file
@@ -98,3 +159,18 @@ def analyze_file(file, filename):
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key=f"dl_{filename}",
     )
+
+# -----------------------
+# Streamlit App
+# -----------------------
+
+st.title("📊 Analisis Laporan Trading (Fleksibel)")
+
+uploaded_files = st.file_uploader("Upload file laporan trading (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+
+if uploaded_files:
+    for file in uploaded_files:
+        try:
+            analyze_file(file, file.name)
+        except Exception as e:
+            st.error(f"Gagal memproses file {file.name}: {e}")
