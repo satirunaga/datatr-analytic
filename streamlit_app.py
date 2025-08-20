@@ -40,3 +40,40 @@ def hitung_profit_perhari(file):
     per_day = (
         df.groupby("CloseDate")
         .agg(
+            GrossProfit=("Profit", "sum"),
+            Swap=("Swap", "sum"),
+            Commission=("Commission", "sum"),
+        )
+        .reset_index()
+    )
+    per_day["NetProfit"] = per_day["GrossProfit"] + per_day["Swap"] + per_day["Commission"]
+
+    # Metrik utama
+    max_row = per_day.loc[per_day["NetProfit"].idxmax()]
+    max_profit, max_date = max_row["NetProfit"], max_row["CloseDate"]
+    total_profit = per_day["NetProfit"].sum()
+    percentage = (max_profit / total_profit) * 100 if total_profit != 0 else 0
+
+    return per_day, max_profit, max_date, total_profit, percentage
+
+
+# Upload multiple files
+uploaded_files = st.file_uploader("📂 Upload file laporan trading", accept_multiple_files=True)
+
+if uploaded_files:
+    for file in uploaded_files:
+        st.subheader(f"📑 File: {file.name}")
+
+        hasil = hitung_profit_perhari(file)
+        if hasil:
+            per_day, max_profit, max_date, total_profit, percentage = hasil
+
+            st.write("### === Profit per hari (berdasarkan tanggal CLOSE) ===")
+            st.dataframe(per_day)
+
+            st.success(f"🔥 Profit harian terbesar (Net): {max_profit} pada {max_date}")
+            st.info(f"💰 Total profit (Net): {total_profit}")
+            st.warning(f"📈 Persentase: {round(percentage, 2)} %")
+
+            # Tambahan: grafik
+            st.line_chart(per_day.set_index("CloseDate")["NetProfit"])
