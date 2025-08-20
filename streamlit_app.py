@@ -1,20 +1,33 @@
 import streamlit as st
 import pandas as pd
 
-st.title("📊 Analisis Profit Trading per Hari")
+st.title("📊 Trading Report Analyzer")
 
-# Fungsi utama
-def hitung_profit_perhari(file):
-    # Baca file sesuai format
+def baca_file(file):
+    """Baca file dan otomatis cari header yang benar."""
     if file.name.endswith(".csv"):
         df = pd.read_csv(file)
     else:
-        df = pd.read_excel(file, header=1)  # header=1 karena header ada di baris kedua
+        # coba baca beberapa kali dengan skiprows
+        for skip in range(0, 10):
+            try:
+                df = pd.read_excel(file, skiprows=skip)
+                if "Time" in df.columns and "Profit" in df.columns:
+                    return df
+            except Exception:
+                continue
+        return None
+    return df
 
-    # Pastikan kolom tersedia
-    if "Time" not in df.columns or "Profit" not in df.columns:
+def hitung_profit_perhari(file):
+    df = baca_file(file)
+
+    if df is None or "Time" not in df.columns or "Profit" not in df.columns:
         st.error("❌ File tidak memiliki kolom 'Time' dan 'Profit'.")
         return None
+
+    # Debug tampilkan kolom
+    st.write("Kolom terbaca:", list(df.columns))
 
     # Konversi tipe data
     df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
@@ -38,22 +51,20 @@ def hitung_profit_perhari(file):
     return per_day, max_profit, max_date, total_profit, percentage
 
 
-# Upload multiple file
-uploaded_files = st.file_uploader("Upload file trading (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
+# Upload multiple files
+uploaded_files = st.file_uploader("📂 Upload file laporan trading", accept_multiple_files=True)
 
 if uploaded_files:
     for file in uploaded_files:
-        st.subheader(f"📂 File: {file.name}")
+        st.subheader(f"📑 File: {file.name}")
 
-        result = hitung_profit_perhari(file)
-        if result:
-            per_day, max_profit, max_date, total_profit, percentage = result
+        hasil = hitung_profit_perhari(file)
+        if hasil:
+            per_day, max_profit, max_date, total_profit, percentage = hasil
 
-            # Tampilkan tabel
-            st.write("📅 Profit per Hari:")
+            st.write("### 📊 Profit per hari:")
             st.dataframe(per_day)
 
-            # Ringkasan
-            st.success(f"🔥 Profit terbesar: {max_profit:,.2f} pada {max_date}")
-            st.info(f"💰 Total profit: {total_profit:,.2f}")
-            st.warning(f"📈 Persentase kontribusi profit terbesar: {percentage:.2f}%")
+            st.success(f"🔥 Profit terbesar: {max_profit} pada {max_date}")
+            st.info(f"💰 Total profit: {total_profit}")
+            st.warning(f"📈 Kontribusi profit terbesar: {round(percentage, 2)} %")
