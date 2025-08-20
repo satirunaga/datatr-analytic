@@ -11,7 +11,6 @@ def extract_account_info(file):
         # baca 20 baris pertama (header laporan), tanpa header kolom
         header_df = pd.read_excel(file, sheet_name="Sheet1", nrows=20, header=None)
 
-        # gabungkan setiap baris jadi string, drop NaN supaya tidak ada "nan nan"
         texts = (
             header_df.apply(
                 lambda row: " ".join([str(x) for x in row if pd.notna(x)]), axis=1
@@ -49,6 +48,10 @@ def analyze_file(file, filename):
         if not {"Time", "Time.1", "Profit", "Commission", "Swap"}.issubset(df.columns):
             st.error("❌ Data tidak sesuai format laporan trading MetaTrader.")
             return
+
+        # konversi angka ke numeric (handle kalau ada string/spasi)
+        for col in ["Profit", "Commission", "Swap"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
         # gunakan kolom Time.1 (waktu close trade)
         df["CloseDate"] = pd.to_datetime(df["Time.1"], errors="coerce").dt.date
