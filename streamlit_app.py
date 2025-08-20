@@ -69,4 +69,25 @@ def analyze_file(file, filename):
         max_row = per_day.loc[per_day["NetProfit"].idxmax()]
         max_profit, max_date = max_row["NetProfit"], max_row["CloseDate"]
 
-        total_pro_
+        total_profit = per_day["NetProfit"].sum()
+
+        percentage = (max_profit / total_profit * 100) if total_profit != 0 else 0
+
+        st.success(
+            f"🔥 Profit harian terbesar (Net): {max_profit:.2f} pada {max_date}\n\n"
+            f"💰 Total profit (Net): {total_profit:.2f}\n\n"
+            f"📈 Persentase kontribusi: {percentage:.2f} %"
+        )
+
+    except Exception as e:
+        st.error(f"Gagal memproses file: {e}")
+
+
+# --- Upload multiple files ---
+uploaded_files = st.file_uploader(
+    "Upload laporan trading (.xlsx)", type=["xlsx"], accept_multiple_files=True
+)
+
+if uploaded_files:
+    for file in uploaded_files:
+        analyze_file(file, file.name)
