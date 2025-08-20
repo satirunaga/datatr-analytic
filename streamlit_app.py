@@ -1,98 +1,104 @@
 import streamlit as st
 import pandas as pd
-from io import BytesIO
 
-st.title("📊 Analisa Laporan Trading per Klien")
+st.set_page_config(page_title="Trading Report Analyzer", layout="wide")
 
-uploaded_files = st.file_uploader("Upload file laporan trading (Excel)", type=["xlsx"], accept_multiple_files=True)
-
+# === Fungsi ambil info Account & Nama ===
 def extract_account_info(file):
     """Ambil informasi account dan nama trader dari baris awal laporan MetaTrader"""
     try:
         header_df = pd.read_excel(file, sheet_name="Sheet1", nrows=6, header=None)
-        account_number, account_name = "Tidak diketahui", "Tidak diketahui"
-        for row in header_df[0].dropna():
-            if "Account" in str(row):
-                account_number = str(row).replace("Account:", "").strip()
-            if "Name" in str(row):
-                account_name = str(row).replace("Name:", "").strip()
-        return account_number, account_name
+
+        account_number, account_name = "Tidak ditemukan", "Tidak ditemukan"
+
+        # Cari di seluruh isi dataframe, bukan hanya kolom 0
+        for row in header_df.values.flatten():
+            if pd.isna(row):
+                continue
+            text = str(row)
+            if "Account" in text:
+                account_number = text.replace("Account:", "").strip()
+            if "Name" in text:
+                account_name = text.replace("Name:", "").strip()
+
+        return account_number, account_name, header_df
     except Exception:
-        return "Tidak diketahui", "Tidak diketahui"
+        return "Tidak ditemukan", "Tidak ditemukan", pd.DataFrame()
 
+
+# === Fungsi analisa profit ===
 def hitung_profit_perhari(file):
-    # baca tabel transaksi
-    df = pd.read_excel(file, sheet_name="Sheet1", header=7)
+    try:
+        df = pd.read_excel(file, sheet_name="Sheet1", header=7)
 
-    if not {"Time.1", "Profit", "Swap", "Commission"}.issubset(df.columns):
-        st.error("❌ Kolom transaksi tidak ditemukan dalam file ini.")
+        # Pastikan kolom penting ada
+        if not {"Time.1", "Profit", "Commission", "Swap"}.issubset(df.columns):
+            return None
+
+        # Bersihkan data
+        df = df.dropna(subset=["Time.1", "Profit"])
+        df["CloseDate"] = pd.to_datetime(df["Time.1"]).dt.date
+        df["Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0)
+        df["Swap"] = pd.to_numeric(df["Swap"], errors="coerce").fillna(0)
+        df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
+
+        # Hitung gross/net per hari
+        per_day = (
+            df.groupby("CloseDate")
+            .agg(
+                GrossProfit=("Profit", "sum"),
+                Swap=("Swap", "sum"),
+                Commission=("Commission", "sum"),
+            )
+            .reset_index()
+        )
+        per_day["NetProfit"] = (
+            per_day["GrossProfit"] + per_day["Swap"] + per_day["Commission"]
+        )
+
+        # Statistik
+        max_row = per_day.loc[per_day["NetProfit"].idxmax()]
+        max_profit, max_date = max_row["NetProfit"], max_row["CloseDate"]
+        total_profit = per_day["NetProfit"].sum()
+        percentage = (max_profit / total_profit * 100) if total_profit != 0 else 0
+
+        return per_day, max_profit, max_date, total_profit, percentage
+    except Exception as e:
+        st.error(f"Gagal memproses file: {e}")
         return None
 
-    df["CloseDate"] = pd.to_datetime(df["Time.1"], errors="coerce").dt.date
 
-    df["Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0)
-    df["Swap"] = pd.to_numeric(df["Swap"], errors="coerce").fillna(0)
-    df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
+# === UI Streamlit ===
+st.title("📊 Trading Report Analyzer")
 
-    per_day = df.groupby("CloseDate").agg({
-        "Profit": "sum",
-        "Swap": "sum",
-        "Commission": "sum"
-    }).reset_index()
-
-    per_day["NetProfit"] = per_day["Profit"] + per_day["Swap"] + per_day["Commission"]
-
-    max_row = per_day.loc[per_day["NetProfit"].idxmax()]
-    max_profit, max_date = max_row["NetProfit"], max_row["CloseDate"]
-
-    total_profit = per_day["NetProfit"].sum()
-    percentage = (max_profit / total_profit * 100) if total_profit != 0 else 0
-
-    return per_day, max_profit, max_date, total_profit, percentage
-
-def convert_to_excel(df):
-    """Convert dataframe ke file Excel dalam memory"""
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="ProfitPerHari")
-    processed_data = output.getvalue()
-    return processed_data
+uploaded_files = st.file_uploader(
+    "Upload file laporan trading (.xlsx)", type=["xlsx"], accept_multiple_files=True
+)
 
 if uploaded_files:
     for file in uploaded_files:
+        st.divider()
         st.subheader(f"📑 File: {file.name}")
 
-        # ambil info akun
-        account_number, account_name = extract_account_info(file)
-        st.markdown(f"👤 **Nama Pemilik:** {account_name}")
-        st.markdown(f"🏦 **Nomor Akun:** {account_number}")
+        # Ambil info akun & nama
+        account_number, account_name, header_df = extract_account_info(file)
+        st.write(f"👤 Nama Pemilik: **{account_name}**")
+        st.write(f"🏦 Nomor Akun: **{account_number}**")
 
+        # Debug opsional (bisa dimatikan kalau sudah yakin)
+        with st.expander("🔍 Debug: 6 baris pertama file"):
+            st.dataframe(header_df)
+
+        # Hitung profit per hari
         result = hitung_profit_perhari(file)
-        if result is None:
-            continue
+        if result:
+            per_day, max_profit, max_date, total_profit, percentage = result
 
-        per_day, max_profit, max_date, total_profit, percentage = result
+            st.write("### 📊 Profit per Hari (berdasarkan tanggal CLOSE)")
+            st.dataframe(per_day)
 
-        st.dataframe(per_day)
-
-        st.markdown(f"🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**")
-        st.markdown(f"💰 Total profit (Net): **{total_profit:.2f}**")
-        st.markdown(f"📈 Persentase kontribusi: **{percentage:.2f}%**")
-
-        # tombol download Excel
-        excel_data = convert_to_excel(per_day)
-        st.download_button(
-            label="⬇️ Download Hasil Analisa (Excel)",
-            data=excel_data,
-            file_name=f"Analisa_{account_number}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-        # tombol download CSV
-        csv_data = per_day.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="⬇️ Download Hasil Analisa (CSV)",
-            data=csv_data,
-            file_name=f"Analisa_{account_number}.csv",
-            mime="text/csv"
-        )
+            st.success(f"🔥 Profit harian terbesar (Net): {max_profit:.2f} pada {max_date}")
+            st.info(f"💰 Total profit (Net): {total_profit:.2f}")
+            st.warning(f"📈 Persentase kontribusi: {percentage:.2f} %")
+        else:
+            st.error("❌ Data tidak sesuai format laporan trading MetaTrader.")
