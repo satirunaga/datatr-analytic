@@ -5,13 +5,11 @@ st.set_page_config(page_title="Trading Report Analyzer", layout="wide")
 
 # === Fungsi ambil info Account & Nama ===
 def extract_account_info(file):
-    """Ambil informasi account dan nama trader dari baris awal laporan MetaTrader"""
     try:
         header_df = pd.read_excel(file, sheet_name="Sheet1", nrows=6, header=None)
 
         account_number, account_name = "Tidak ditemukan", "Tidak ditemukan"
 
-        # Cari di seluruh isi dataframe, bukan hanya kolom 0
         for row in header_df.values.flatten():
             if pd.isna(row):
                 continue
@@ -35,9 +33,18 @@ def hitung_profit_perhari(file):
         if not {"Time.1", "Profit", "Commission", "Swap"}.issubset(df.columns):
             return None
 
-        # Bersihkan data
-        df = df.dropna(subset=["Time.1", "Profit"])
-        df["CloseDate"] = pd.to_datetime(df["Time.1"]).dt.date
+        # Bersihkan baris kosong/aneh
+        df = df.dropna(subset=["Time.1", "Profit"], how="any")
+
+        # Konversi ke datetime, yang gagal akan jadi NaT
+        df["CloseDate"] = pd.to_datetime(
+            df["Time.1"], errors="coerce", dayfirst=True
+        ).dt.date
+
+        # Hanya ambil baris yang valid datetime
+        df = df.dropna(subset=["CloseDate"])
+
+        # Ubah tipe data numerik
         df["Profit"] = pd.to_numeric(df["Profit"], errors="coerce").fillna(0)
         df["Swap"] = pd.to_numeric(df["Swap"], errors="coerce").fillna(0)
         df["Commission"] = pd.to_numeric(df["Commission"], errors="coerce").fillna(0)
@@ -85,7 +92,7 @@ if uploaded_files:
         st.write(f"👤 Nama Pemilik: **{account_name}**")
         st.write(f"🏦 Nomor Akun: **{account_number}**")
 
-        # Debug opsional (bisa dimatikan kalau sudah yakin)
+        # Debug opsional
         with st.expander("🔍 Debug: 6 baris pertama file"):
             st.dataframe(header_df)
 
