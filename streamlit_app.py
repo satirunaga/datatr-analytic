@@ -98,6 +98,7 @@ def analyze_file(file, filename):
             data=output.getvalue(),
             file_name=f"Hasil_Analisa_{account_number}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"download_{filename}",  # 🔑 unik per file
         )
 
     except Exception as e:
