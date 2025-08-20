@@ -1,61 +1,59 @@
 import streamlit as st
 import pandas as pd
 
-st.title("📊 Trading Profit Analyzer")
+st.title("📊 Analisis Profit Trading per Hari")
 
-uploaded_files = st.file_uploader(
-    "Upload file laporan trading (XLSX/CSV)",
-    type=["xlsx", "csv"],
-    accept_multiple_files=True
-)
+# Fungsi utama
+def hitung_profit_perhari(file):
+    # Baca file sesuai format
+    if file.name.endswith(".csv"):
+        df = pd.read_csv(file)
+    else:
+        df = pd.read_excel(file, header=1)  # header=1 karena header ada di baris kedua
 
-# Baca data (header sudah benar di baris index 7)
-df = pd.read_excel(file_path, sheet_name="Sheet1", header=7)
+    # Pastikan kolom tersedia
+    if "Time" not in df.columns or "Profit" not in df.columns:
+        st.error("❌ File tidak memiliki kolom 'Time' dan 'Profit'.")
+        return None
 
-# Bersihkan kolom tak terpakai
-df = df.drop(columns=["Unnamed: 13"], errors="ignore")
+    # Konversi tipe data
+    df["Time"] = pd.to_datetime(df["Time"], errors="coerce")
+    df["Profit"] = pd.to_numeric(df["Profit"], errors="coerce")
 
-# Pastikan tipe data numerik
-for col in ["Profit", "Swap", "Commission"]:
-    df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    # Bersihkan data
+    df = df.dropna(subset=["Time", "Profit"])
 
-# Pastikan datetime untuk open & close time
-df["Time"]   = pd.to_datetime(df["Time"], errors="coerce")
-df["Time.1"] = pd.to_datetime(df["Time.1"], errors="coerce")  # <-- close time
+    # Ambil tanggal saja
+    df["Date"] = df["Time"].dt.date
 
-# Filter hanya baris trade buy/sell
-df["Type"] = df["Type"].astype(str).str.lower()
-trades = df[df["Type"].isin(["buy", "sell"])].copy()
+    # Hitung profit per hari
+    per_day = df.groupby("Date")["Profit"].sum().reset_index()
 
-# Profit bersih per trade
-trades["Net"] = trades["Profit"] + trades["Swap"] - trades["Commission"]
+    # Hitung metrik utama
+    max_row = per_day.loc[per_day["Profit"].idxmax()]
+    max_profit, max_date = max_row["Profit"], max_row["Date"]
+    total_profit = per_day["Profit"].sum()
+    percentage = (max_profit / total_profit) * 100 if total_profit != 0 else 0
 
-# Kelompokkan per TANGGAL CLOSE
-trades["CloseDate"] = trades["Time.1"].dt.date
-per_day = (
-    trades.groupby("CloseDate", as_index=False)
-          .agg(GrossProfit=("Profit","sum"),
-               Swap=("Swap","sum"),
-               Commission=("Commission","sum"),
-               NetProfit=("Net","sum"))
-          .sort_values("CloseDate")
-)
+    return per_day, max_profit, max_date, total_profit, percentage
 
-# Ambil nilai terbesar & total
-max_row = per_day.loc[per_day["NetProfit"].idxmax()]
-max_profit = float(max_row["NetProfit"])
-max_date   = max_row["CloseDate"]
-total_profit = float(per_day["NetProfit"].sum())
-percentage = (max_profit / total_profit * 100) if total_profit != 0 else 0.0
 
-print("=== Profit per hari (berdasarkan tanggal CLOSE) ===")
-print(per_day)
+# Upload multiple file
+uploaded_files = st.file_uploader("Upload file trading (CSV/XLSX)", type=["csv", "xlsx"], accept_multiple_files=True)
 
-print("\n🔥 Profit harian terbesar (Net):", round(max_profit, 2), "pada", max_date)
-print("💰 Total profit (Net):", round(total_profit, 2))
-print("📈 Persentase:", round(percentage, 2), "%")
+if uploaded_files:
+    for file in uploaded_files:
+        st.subheader(f"📂 File: {file.name}")
 
-# Validasi cepat tanggal tertentu
-check_date = pd.to_datetime("2025-08-04").date()
-cek_sum = trades.loc[trades["CloseDate"] == check_date, "Net"].sum()
-print("\n✅ Cek 2025-08-04 (Net):", round(cek_sum, 2))
+        result = hitung_profit_perhari(file)
+        if result:
+            per_day, max_profit, max_date, total_profit, percentage = result
+
+            # Tampilkan tabel
+            st.write("📅 Profit per Hari:")
+            st.dataframe(per_day)
+
+            # Ringkasan
+            st.success(f"🔥 Profit terbesar: {max_profit:,.2f} pada {max_date}")
+            st.info(f"💰 Total profit: {total_profit:,.2f}")
+            st.warning(f"📈 Persentase kontribusi profit terbesar: {percentage:.2f}%")
