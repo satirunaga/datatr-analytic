@@ -13,28 +13,34 @@ uploaded_files = st.file_uploader(
 def load_mt_report(file):
     """Membaca file laporan MT4/MT5 dan mengembalikan info akun + DataFrame transaksi"""
     try:
-        df_raw = pd.read_excel(file, header=None)
+        df_raw = pd.read_excel(file, header=None, dtype=str)
     except:
         file.seek(0)
-        df_raw = pd.read_csv(file, header=None)
+        df_raw = pd.read_csv(file, header=None, dtype=str)
 
     name, account = None, None
-    for row in df_raw[0].dropna().astype(str):
-        if row.startswith("Name:"):
-            name = row.replace("Name:", "").strip()
-        elif row.startswith("Account:"):
-            account = row.replace("Account:", "").strip()
 
+    # 🔍 Cari di semua baris dan kolom
+    for _, row in df_raw.iterrows():
+        for cell in row.dropna().astype(str):
+            cell_strip = cell.strip()
+            if cell_strip.startswith("Name:"):
+                name = cell_strip.replace("Name:", "").strip()
+            elif cell_strip.startswith("Account:"):
+                account = cell_strip.replace("Account:", "").strip()
+
+    # Cari baris header tabel transaksi
     header_row = None
     for i, row in df_raw.iterrows():
-        values = [str(x) for x in row.tolist()]
-        if "Time" in values or "Open Time" in values:
+        values = [str(x).lower() for x in row.tolist()]
+        if "time" in values or "open time" in values:
             header_row = i
             break
 
     if header_row is None:
         raise ValueError("Tidak menemukan header tabel transaksi.")
 
+    # Baca ulang tabel dengan header
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -128,11 +134,11 @@ if uploaded_files:
             st.subheader("📊 Profit per hari (Net)")
             st.dataframe(daily)
 
-            # Buat file CSV dengan metadata (nama & akun)
+            # CSV dengan metadata
             output = io.StringIO()
             if name: output.write(f"Name:,{name}\n")
             if account: output.write(f"Account:,{account}\n")
-            output.write("\n")  # pemisah
+            output.write("\n")  
             daily.to_csv(output, index=False)
 
             st.download_button(
