@@ -20,17 +20,12 @@ def load_mt_report(file):
 
     name, account = None, None
 
-    # 🔍 Cari di semua baris dan kolom (cek pasangan "Name:" dan "Account:")
+    # 🔍 Cari info Name & Account di 2 kolom (format laporan MT)
     for _, row in df_raw.iterrows():
-        for i, cell in enumerate(row.dropna().astype(str)):
-            cell_strip = cell.strip()
-            if cell_strip.startswith("Name:"):
-                # ambil isi kolom setelahnya (jika ada)
-                if i + 1 < len(row):
-                    name = row.iloc[i + 1]
-            elif cell_strip.startswith("Account:"):
-                if i + 1 < len(row):
-                    account = row.iloc[i + 1]
+        if str(row[0]).strip().lower().startswith("name"):
+            name = str(row[1]).strip() if len(row) > 1 and pd.notna(row[1]) else "-"
+        elif str(row[0]).strip().lower().startswith("account"):
+            account = str(row[1]).strip() if len(row) > 1 and pd.notna(row[1]) else "-"
 
     # Cari baris header tabel transaksi
     header_row = None
@@ -41,9 +36,9 @@ def load_mt_report(file):
             break
 
     if header_row is None:
-        raise ValueError("Tidak menemukan header tabel transaksi.")
+        raise ValueError("❌ Tidak menemukan header tabel transaksi.")
 
-    # Baca ulang tabel dengan header
+    # Baca ulang tabel mulai dari header_row
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -51,17 +46,21 @@ def load_mt_report(file):
         file.seek(0)
         df = pd.read_csv(file, skiprows=header_row)
 
-    return name, account, df
+    return name or "-", account or "-", df
+
 
 def process_trades(df):
     """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
+
+    # cari kolom waktu
     close_col = None
     for key in ["time.1", "close time", "close"]:
         if key in cols:
             close_col = cols[key]
             break
 
+    # cari kolom profit
     profit_col = None
     for key in ["profit", "net profit"]:
         if key in cols:
@@ -81,7 +80,7 @@ def process_trades(df):
             break
 
     if close_col is None or profit_col is None:
-        raise ValueError("Kolom Time/Close atau Profit tidak ditemukan.")
+        raise ValueError("❌ Kolom Time/Close atau Profit tidak ditemukan.")
 
     df[close_col] = pd.to_datetime(df[close_col], errors="coerce")
     df["CloseDate"] = df[close_col].dt.date
@@ -90,16 +89,15 @@ def process_trades(df):
     df["Swap"] = pd.to_numeric(df[swap_col], errors="coerce").fillna(0) if swap_col else 0
     df["Commission"] = pd.to_numeric(df[comm_col], errors="coerce").fillna(0) if comm_col else 0
 
-    df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
+    # hanya hitung Profit (tanpa swap & komisi)
+    df["NetProfit"] = df["Profit"]
 
     daily = df.groupby("CloseDate").agg(
-        GrossProfit=("Profit", "sum"),
-        Swap=("Swap", "sum"),
-        Commission=("Commission", "sum"),
         NetProfit=("NetProfit", "sum")
     ).reset_index()
 
     return daily
+
 
 if uploaded_files:
     for file in uploaded_files:
@@ -107,43 +105,44 @@ if uploaded_files:
         try:
             name, account, df = load_mt_report(file)
 
+            st.write(f"👤 Nama Klien: **{name}**")
+            st.write(f"🏦 Nomor Akun: **{account}**")
+
             daily = process_trades(df)
 
+            # Hitung ringkasan
             total_profit = daily["NetProfit"].sum()
             max_row = daily.loc[daily["NetProfit"].idxmax()]
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
-            percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
+            percent = (max_profit / total_profit * 100) if total_profit != 0 else 0
 
-            target_80 = total_profit * 0.8
-            target_90 = total_profit * 0.9
-
-            st.subheader("📊 Ringkasan Laporan Trading")
-            st.markdown(
-                f"""
-                👤 **Nama Klien**: {name if name else "-"}  
-                🏦 **Nomor Akun**: {account if account else "-"}  
-
-                🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
-                💰 Total profit (Net): **{total_profit:.2f}**  
-                📈 Persentase: **{percent:.2f} %**  
-                ✅ Cek {max_date} (Net): **{max_profit:.2f}**  
-
-                🎯 80% (challenge account): **{target_80:.2f}**  
-                🎯 90% (fast track): **{target_90:.2f}**
-                """
-            )
+            # 80% & 90%
+            profit_80 = total_profit * 0.8
+            profit_90 = total_profit * 0.9
 
             st.subheader("📊 Profit per hari (Net)")
             st.dataframe(daily)
 
-            # CSV dengan metadata
-            output = io.StringIO()
-            if name: output.write(f"Name:,{name}\n")
-            if account: output.write(f"Account:,{account}\n")
-            output.write("\n")  
-            daily.to_csv(output, index=False)
+            st.markdown(
+                f"""
+                🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
+                💰 Total profit (Net): **{total_profit:.2f}**  
+                📈 Persentase: **{percent:.2f} %**  
+                ✅ Cek {max_date} (Net): **{max_profit:.2f}**
 
+                ---
+                🎯 80% (challenge account): **{profit_80:.2f}**  
+                🚀 90% (fast track): **{profit_90:.2f}**
+                """
+            )
+
+            # Simpan ke CSV termasuk info nama & akun
+            daily["ClientName"] = name
+            daily["Account"] = account
+
+            output = io.BytesIO()
+            daily.to_csv(output, index=False)
             st.download_button(
                 label="💾 Download hasil per hari (CSV)",
                 data=output.getvalue(),
