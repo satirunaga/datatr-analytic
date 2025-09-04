@@ -12,7 +12,6 @@ uploaded_files = st.file_uploader(
 
 def load_mt_report(file):
     """Membaca file laporan MT4/MT5 dan mengembalikan info akun + DataFrame transaksi"""
-    # Cari teks nama & account di awal file (pakai pandas read_excel tanpa header dulu)
     try:
         df_raw = pd.read_excel(file, header=None)
     except:
@@ -26,7 +25,6 @@ def load_mt_report(file):
         elif row.startswith("Account:"):
             account = row.replace("Account:", "").strip()
 
-    # Cari baris header tabel (biasanya ada kolom "Time" atau "Open Time")
     header_row = None
     for i, row in df_raw.iterrows():
         values = [str(x) for x in row.tolist()]
@@ -37,7 +35,6 @@ def load_mt_report(file):
     if header_row is None:
         raise ValueError("Tidak menemukan header tabel transaksi.")
 
-    # Baca ulang mulai dari header_row
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -48,8 +45,7 @@ def load_mt_report(file):
     return name, account, df
 
 def process_trades(df):
-    """Menghitung profit harian berdasarkan Close Time (Time.1)"""
-    # Normalisasi nama kolom
+    """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
     close_col = None
     for key in ["time.1", "close time", "close"]:
@@ -85,7 +81,6 @@ def process_trades(df):
     df["Swap"] = pd.to_numeric(df[swap_col], errors="coerce").fillna(0) if swap_col else 0
     df["Commission"] = pd.to_numeric(df[comm_col], errors="coerce").fillna(0) if comm_col else 0
 
-    # Hitung NetProfit sesuai logika Anda sekarang
     df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
 
     daily = df.groupby("CloseDate").agg(
@@ -102,27 +97,24 @@ if uploaded_files:
         st.write(f"📑 File: {file.name}")
         try:
             name, account, df = load_mt_report(file)
-            if name: st.write(f"👤 Nama Pemilik: **{name}**")
-            if account: st.write(f"🏦 Nomor Akun: **{account}**")
 
             daily = process_trades(df)
 
-            # Hitung ringkasan
             total_profit = daily["NetProfit"].sum()
             max_row = daily.loc[daily["NetProfit"].idxmax()]
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
 
-            # Target tambahan
             target_80 = total_profit * 0.8
             target_90 = total_profit * 0.9
 
-            st.subheader("📊 Profit per hari (Net)")
-            st.dataframe(daily)
-
+            st.subheader("📊 Ringkasan Laporan Trading")
             st.markdown(
                 f"""
+                👤 **Nama Klien**: {name if name else "-"}  
+                🏦 **Nomor Akun**: {account if account else "-"}  
+
                 🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
                 💰 Total profit (Net): **{total_profit:.2f}**  
                 📈 Persentase: **{percent:.2f} %**  
@@ -133,9 +125,16 @@ if uploaded_files:
                 """
             )
 
-            # Tombol download hasil per hari
-            output = io.BytesIO()
+            st.subheader("📊 Profit per hari (Net)")
+            st.dataframe(daily)
+
+            # Buat file CSV dengan metadata (nama & akun)
+            output = io.StringIO()
+            if name: output.write(f"Name:,{name}\n")
+            if account: output.write(f"Account:,{account}\n")
+            output.write("\n")  # pemisah
             daily.to_csv(output, index=False)
+
             st.download_button(
                 label="💾 Download hasil per hari (CSV)",
                 data=output.getvalue(),
