@@ -12,32 +12,33 @@ uploaded_files = st.file_uploader(
 
 def load_mt_report(file):
     """Membaca file laporan MT4/MT5 dan mengembalikan info akun + DataFrame transaksi"""
-    # Cari teks nama & account di awal file (pakai pandas read_excel tanpa header dulu)
     try:
-        df_raw = pd.read_excel(file, header=None)
+        df_raw = pd.read_excel(file, header=None, dtype=str)
     except:
         file.seek(0)
-        df_raw = pd.read_csv(file, header=None)
+        df_raw = pd.read_csv(file, header=None, dtype=str)
 
     name, account = None, None
-    for row in df_raw[0].dropna().astype(str):
-        if row.startswith("Name:"):
-            name = row.replace("Name:", "").strip()
-        elif row.startswith("Account:"):
-            account = row.replace("Account:", "").strip()
+    # cari 'Name:' dan 'Account:' lebih fleksibel (gabungkan kolom)
+    for _, row in df_raw.iterrows():
+        joined = " ".join([str(x).strip() for x in row if pd.notna(x)])
+        if joined.lower().startswith("name:"):
+            name = joined.split(":", 1)[1].strip()
+        elif joined.lower().startswith("account:"):
+            account = joined.split(":", 1)[1].strip()
 
-    # Cari baris header tabel (biasanya ada kolom "Time" atau "Open Time")
+    # cari baris header tabel
     header_row = None
     for i, row in df_raw.iterrows():
-        values = [str(x) for x in row.tolist()]
-        if "Time" in values or "Open Time" in values:
+        values = [str(x).strip() for x in row.tolist()]
+        if any("Time" in v for v in values) and any("Profit" in v for v in values):
             header_row = i
             break
 
     if header_row is None:
         raise ValueError("Tidak menemukan header tabel transaksi.")
 
-    # Baca ulang mulai dari header_row
+    # baca ulang mulai dari baris header_row
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -48,8 +49,7 @@ def load_mt_report(file):
     return name, account, df
 
 def process_trades(df):
-    """Menghitung profit harian berdasarkan Close Time (Time.1)"""
-    # Normalisasi nama kolom
+    """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
     close_col = None
     for key in ["time.1", "close time", "close"]:
@@ -63,17 +63,8 @@ def process_trades(df):
             profit_col = cols[key]
             break
 
-    swap_col = None
-    for key in ["swap"]:
-        if key in cols:
-            swap_col = cols[key]
-            break
-
-    comm_col = None
-    for key in ["commission", "comm"]:
-        if key in cols:
-            comm_col = cols[key]
-            break
+    swap_col = next((cols[k] for k in cols if "swap" in k), None)
+    comm_col = next((cols[k] for k in cols if "commission" in k or "comm" in k), None)
 
     if close_col is None or profit_col is None:
         raise ValueError("Kolom Time/Close atau Profit tidak ditemukan.")
@@ -88,7 +79,7 @@ def process_trades(df):
     df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
 
     daily = df.groupby("CloseDate").agg(
-        GrossProfit=( "Profit", "sum"),
+        GrossProfit=("Profit", "sum"),
         Swap=("Swap", "sum"),
         Commission=("Commission", "sum"),
         NetProfit=("NetProfit", "sum")
@@ -101,17 +92,21 @@ if uploaded_files:
         st.write(f"📑 File: {file.name}")
         try:
             name, account, df = load_mt_report(file)
-            if name: st.write(f"👤 Nama Pemilik: **{name}**")
-            if account: st.write(f"🏦 Nomor Akun: **{account}**")
+            st.write(f"👤 Nama Klien: **{name or '-'}**")
+            st.write(f"🏦 Nomor Akun: **{account or '-'}**")
 
             daily = process_trades(df)
 
-            # Hitung ringkasan
+            # ringkasan
             total_profit = daily["NetProfit"].sum()
             max_row = daily.loc[daily["NetProfit"].idxmax()]
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
+
+            # tambahan 80% & 90%
+            challenge_80 = total_profit * 0.80
+            fasttrack_90 = total_profit * 0.90
 
             st.subheader("📊 Profit per hari (Net)")
             st.dataframe(daily)
@@ -122,12 +117,20 @@ if uploaded_files:
                 💰 Total profit (Net): **{total_profit:.2f}**  
                 📈 Persentase: **{percent:.2f} %**  
                 ✅ Cek {max_date} (Net): **{max_profit:.2f}**
+
+                ---
+                🎯 80% (challenge account): **{challenge_80:.2f}**  
+                🚀 90% (fast track): **{fasttrack_90:.2f}**
                 """
             )
 
-            # Tombol download hasil per hari
+            # Download hasil
             output = io.BytesIO()
-            daily.to_csv(output, index=False)
+            daily_out = daily.copy()
+            daily_out.insert(0, "Account", account or "-")
+            daily_out.insert(0, "ClientName", name or "-")
+            daily_out.to_csv(output, index=False)
+
             st.download_button(
                 label="💾 Download hasil per hari (CSV)",
                 data=output.getvalue(),
