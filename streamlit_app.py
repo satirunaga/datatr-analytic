@@ -20,14 +20,17 @@ def load_mt_report(file):
 
     name, account = None, None
 
-    # 🔍 Cari di semua baris dan kolom
+    # 🔍 Cari di semua baris dan kolom (cek pasangan "Name:" dan "Account:")
     for _, row in df_raw.iterrows():
-        for cell in row.dropna().astype(str):
+        for i, cell in enumerate(row.dropna().astype(str)):
             cell_strip = cell.strip()
             if cell_strip.startswith("Name:"):
-                name = cell_strip.replace("Name:", "").strip()
+                # ambil isi kolom setelahnya (jika ada)
+                if i + 1 < len(row):
+                    name = row.iloc[i + 1]
             elif cell_strip.startswith("Account:"):
-                account = cell_strip.replace("Account:", "").strip()
+                if i + 1 < len(row):
+                    account = row.iloc[i + 1]
 
     # Cari baris header tabel transaksi
     header_row = None
@@ -126,8 +129,8 @@ if uploaded_files:
                 📈 Persentase: **{percent:.2f} %**  
                 ✅ Cek {max_date} (Net): **{max_profit:.2f}**  
 
-                🎯 80% dari total profit: **{target_80:.2f}**  
-                🎯 90% dari total profit: **{target_90:.2f}**
+                🎯 80% (challenge account): **{target_80:.2f}**  
+                🎯 90% (fast track): **{target_90:.2f}**
                 """
             )
 
