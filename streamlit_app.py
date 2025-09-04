@@ -10,7 +10,7 @@ uploaded_files = st.file_uploader(
     accept_multiple_files=True
 )
 
-# ---------- helper ambil nama & akun ----------
+# helper ambil nama & akun
 def extract_label_value(df_raw: pd.DataFrame, target: str) -> str | None:
     target = target.lower()
     for _, row in df_raw.iterrows():
@@ -28,31 +28,48 @@ def extract_label_value(df_raw: pd.DataFrame, target: str) -> str | None:
                     return " ".join(cells[j+1:])
     return None
 
-# ---------- main ----------
+def load_mt_report(file):
+    """Baca laporan MT4/MT5: deteksi nama/akun + tabel transaksi"""
+    # baca raw dulu (tanpa header) utk info nama & akun
+    try:
+        df_raw = pd.read_excel(file, header=None, dtype=str)
+    except:
+        file.seek(0)
+        df_raw = pd.read_csv(file, header=None, dtype=str)
+
+    # ambil nama & akun
+    name = extract_label_value(df_raw, "name") or "-"
+    account = extract_label_value(df_raw, "account") or "-"
+
+    # cari baris header tabel (kolom transaksi)
+    header_row = None
+    for i, row in df_raw.iterrows():
+        cells = [str(x).lower().strip() for x in row if pd.notna(x)]
+        if any("profit" in c for c in cells) and any("time" in c for c in cells):
+            header_row = i
+            break
+
+    if header_row is None:
+        raise ValueError("❌ Tidak menemukan header tabel transaksi")
+
+    # baca ulang mulai header_row
+    file.seek(0)
+    try:
+        df = pd.read_excel(file, skiprows=header_row)
+    except:
+        file.seek(0)
+        df = pd.read_csv(file, skiprows=header_row)
+
+    return name, account, df
+
 if uploaded_files:
     for uploaded_file in uploaded_files:
         st.write(f"📑 File: {uploaded_file.name}")
 
         try:
-            # baca raw dulu utk nama/akun
-            try:
-                df_raw = pd.read_excel(uploaded_file, header=None, nrows=80, dtype=str)
-            except:
-                uploaded_file.seek(0)
-                df_raw = pd.read_csv(uploaded_file, header=None, nrows=80, dtype=str)
-
-            name = extract_label_value(df_raw, "name") or "-"
-            account = extract_label_value(df_raw, "account") or "-"
-
+            name, account, df = load_mt_report(uploaded_file)
             st.write(f"👤 Nama Klien: **{name}**")
             st.write(f"🏦 Nomor Akun: **{account}**")
-
-            # baca penuh utk analisis
-            uploaded_file.seek(0)
-            if uploaded_file.name.endswith(".csv"):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
 
             # normalisasi kolom
             df.columns = df.columns.str.strip().str.lower()
@@ -65,14 +82,11 @@ if uploaded_files:
                 st.error(f"❌ Tidak menemukan kolom tanggal atau profit pada {uploaded_file.name}")
                 continue
 
-            # parsing tanggal close
+            # parsing tanggal
             df[time_col] = pd.to_datetime(df[time_col], errors="coerce")
             df = df.dropna(subset=[time_col])
 
-            # ambil tanggal saja
             df["CloseDate"] = df[time_col].dt.date
-
-            # pastikan profit numeric
             df["Profit"] = (
                 df[profit_col]
                 .astype(str)
@@ -84,22 +98,19 @@ if uploaded_files:
             # hitung per hari
             df_daily = df.groupby("CloseDate")["Profit"].sum().reset_index()
 
-            # cari profit harian terbesar
+            # profit harian max
             max_row = df_daily.loc[df_daily["Profit"].idxmax()]
             max_profit = max_row["Profit"]
             max_date = max_row["CloseDate"]
 
             # total profit
             total_profit = df_daily["Profit"].sum()
-
-            # kontribusi (%)
             contribution_pct = (max_profit / total_profit * 100) if total_profit != 0 else 0
 
             # tambahan 80% & 90%
             challenge_80 = total_profit * 0.80
             fasttrack_90 = total_profit * 0.90
 
-            # tampilkan hasil
             st.write("📊 **Profit per hari**")
             st.dataframe(df_daily)
 
@@ -114,7 +125,7 @@ if uploaded_files:
             🚀 90% (fast track): **{fasttrack_90:,.2f}**
             """)
 
-            # download hasil
+            # download csv
             out = df_daily.copy()
             out.insert(0, "Account", account)
             out.insert(0, "ClientName", name)
