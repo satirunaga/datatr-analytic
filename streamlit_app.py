@@ -1,22 +1,43 @@
 import streamlit as st
 import pandas as pd
 import io
-from PIL import Image
 
-# tampilkan logo di sidebar
-logo = Image.open("tplus_logoo.jpg")  
-st.sidebar.image(logo, width=200)
+# ==========================
+# Tambah logo watermark
+# ==========================
+st.markdown(
+    """
+    <style>
+    .watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0.3;
+        z-index: -1;
+    }
+    </style>
+    <div class="watermark">
+        <img src="https://raw.githubusercontent.com/satirunaga/datatr-analytic/main/tplus_logoo.jpg" width="600">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
+# ==========================
+# Judul Aplikasi
+# ==========================
 st.title("📊 Analisis Laporan Trading MetaTrader")
 
-# Upload file laporan
 uploaded_files = st.file_uploader(
-    "Upload file laporan trading (CSV/XLSX)",
-    type=["csv", "xlsx"],
+    "Upload file laporan trading (CSV/XLSX)", 
+    type=["csv", "xlsx"], 
     accept_multiple_files=True
 )
 
-
+# ==========================
+# Fungsi Load Report
+# ==========================
 def load_mt_report(file):
     """Membaca file laporan MT4/MT5 dan mengembalikan info akun + DataFrame transaksi"""
     try:
@@ -26,8 +47,7 @@ def load_mt_report(file):
         df_raw = pd.read_csv(file, header=None, dtype=str)
 
     name, account = None, None
-
-    # Cari 'Name:' dan 'Account:' lebih fleksibel (gabungkan kolom)
+    # cari 'Name:' dan 'Account:' lebih fleksibel (gabungkan kolom)
     for _, row in df_raw.iterrows():
         joined = " ".join([str(x).strip() for x in row if pd.notna(x)])
         if joined.lower().startswith("name:"):
@@ -35,7 +55,7 @@ def load_mt_report(file):
         elif joined.lower().startswith("account:"):
             account = joined.split(":", 1)[1].strip()
 
-    # Cari baris header tabel
+    # cari baris header tabel
     header_row = None
     for i, row in df_raw.iterrows():
         values = [str(x).strip() for x in row.tolist()]
@@ -46,7 +66,7 @@ def load_mt_report(file):
     if header_row is None:
         raise ValueError("Tidak menemukan header tabel transaksi.")
 
-    # Baca ulang mulai dari baris header_row
+    # baca ulang mulai dari baris header_row
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -56,21 +76,31 @@ def load_mt_report(file):
 
     return name, account, df
 
-
+# ==========================
+# Fungsi Proses Data
+# ==========================
 def process_trades(df):
     """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
 
-    # Identifikasi kolom
-    close_col = next((cols[k] for k in ["time.1", "close time", "close"] if k in cols), None)
-    profit_col = next((cols[k] for k in ["profit", "net profit"] if k in cols), None)
+    close_col = None
+    for key in ["time.1", "close time", "close"]:
+        if key in cols:
+            close_col = cols[key]
+            break
+
+    profit_col = None
+    for key in ["profit", "net profit"]:
+        if key in cols:
+            profit_col = cols[key]
+            break
+
     swap_col = next((cols[k] for k in cols if "swap" in k), None)
     comm_col = next((cols[k] for k in cols if "commission" in k or "comm" in k), None)
 
     if close_col is None or profit_col is None:
         raise ValueError("Kolom Time/Close atau Profit tidak ditemukan.")
 
-    # Parsing data
     df[close_col] = pd.to_datetime(df[close_col], errors="coerce")
     df["CloseDate"] = df[close_col].dt.date
 
@@ -80,7 +110,6 @@ def process_trades(df):
 
     df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
 
-    # Hitung profit harian
     daily = df.groupby("CloseDate").agg(
         GrossProfit=("Profit", "sum"),
         Swap=("Swap", "sum"),
@@ -90,12 +119,12 @@ def process_trades(df):
 
     return daily
 
-
-# Proses file yang diupload
+# ==========================
+# Main Logic
+# ==========================
 if uploaded_files:
     for file in uploaded_files:
         st.write(f"📑 File: {file.name}")
-
         try:
             name, account, df = load_mt_report(file)
             st.write(f"👤 Nama Klien: **{name or '-'}**")
@@ -103,21 +132,20 @@ if uploaded_files:
 
             daily = process_trades(df)
 
-            # Ringkasan
+            # ringkasan
             total_profit = daily["NetProfit"].sum()
             max_row = daily.loc[daily["NetProfit"].idxmax()]
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
 
-            # Tentukan status
-            status = "✅ PASS" if percent < 30 else "❌ FAILED"
-
-            # Target 80% & 90%
+            # tambahan 80% & 90%
             challenge_80 = total_profit * 0.80
             fasttrack_90 = total_profit * 0.90
 
-            # Tampilkan hasil
+            # status pass/failed
+            status = "✅ PASS" if percent < 30 else "❌ FAILED"
+
             st.subheader("📊 Profit per hari (Net)")
             st.dataframe(daily)
 
@@ -126,8 +154,7 @@ if uploaded_files:
                 🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
                 💰 Total profit (Net): **{total_profit:.2f}**  
                 📈 Persentase: **{percent:.2f} %**  
-                📝 Status: **{status}**  
-                ✅ Cek {max_date} (Net): **{max_profit:.2f}**
+                🏁 Status: **{status}**  
 
                 ---
                 🎯 80% (challenge account): **{challenge_80:.2f}**  
