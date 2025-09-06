@@ -1,6 +1,12 @@
 import streamlit as st
 import pandas as pd
 import io
+from PIL import Image
+
+# === Logo TradingPlus ===
+logo = Image.open("tplus logo.jpg")
+st.sidebar.image(logo, use_column_width=True)  # tampil di sidebar
+st.sidebar.markdown("### TradingPlus")
 
 st.title("📊 Analisis Laporan Trading MetaTrader")
 
