@@ -7,6 +7,26 @@ from PIL import Image
 logo = Image.open("tplus_logoo.jpg")  
 st.sidebar.image(logo, width=200)
 
+# CSS untuk logo sebagai watermark
+st.markdown(
+    """
+    <style>
+    .watermark {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0.3;
+        z-index: -1;
+    }
+    </style>
+    <div class="watermark">
+        <img src="https://raw.githubusercontent.com/satirunaga/datatr-analytic/main/tplus_logoo.jpg" width="500">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 st.title("📊 Analisis Laporan Trading MetaTrader")
 
 # Upload file laporan
