@@ -1,0 +1,3 @@
+git add tplus_logo.jpg
+git commit -m "add logo"
+git push
