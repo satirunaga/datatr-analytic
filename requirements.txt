@@ -4,3 +4,4 @@ matplotlib
 openpyxl
 xlsxwriter
 plotly
+traceback
