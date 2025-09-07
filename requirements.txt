@@ -4,3 +4,5 @@ matplotlib
 openpyxl
 xlsxwriter
 plotly
+textwrap
+traceback
