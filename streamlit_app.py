@@ -1,39 +1,19 @@
 import streamlit as st
 import pandas as pd
 import io
+import plotly.express as px
 
 # ==========================
-# Styling Font, Warna & Icon
+# Custom Style (Font + Icons + Logo Watermark)
 # ==========================
 st.markdown(
     """
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-    /* Import Google Font */
-    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;600;700&display=swap');
-
+    /* Font */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
     html, body, [class*="css"] {
-        font-family: 'Roboto', sans-serif;
-    }
-
-    /* Warna judul */
-    .stApp h1, h2, h3, h4 {
-        color: #1E293B; /* abu gelap */
-        font-weight: 700;
-    }
-
-    /* Badge status */
-    .status-dot {
-        height: 14px;
-        width: 14px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 6px;
-    }
-    .dot-pass {
-        background-color: #16A34A; /* hijau */
-    }
-    .dot-fail {
-        background-color: #DC2626; /* merah */
+        font-family: 'Inter', sans-serif;
     }
 
     /* Watermark logo */
@@ -46,27 +26,48 @@ st.markdown(
         height: 600px;
         background: url("https://raw.githubusercontent.com/satirunaga/datatr-analytic/main/tplus_logoo.jpg") no-repeat center center;
         background-size: contain;
-        opacity: 0.25;
+        opacity: 0.2;
         transform: translate(-50%, -50%);
         z-index: -1;
+    }
+
+    /* Card style */
+    .metric-card {
+        background: #ffffff;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+    }
+    .metric-title {
+        font-size: 14px;
+        color: #666;
+    }
+    .metric-value {
+        font-size: 20px;
+        font-weight: 600;
+        color: #222;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-st.title("📊 Analisis Laporan Trading MetaTrader")
+# ==========================
+# Title
+# ==========================
+st.markdown('<h1><i class="bi bi-bar-chart-fill"></i> Analisis Laporan Trading MetaTrader</h1>', unsafe_allow_html=True)
 
-# Upload file laporan
+# ==========================
+# Upload file
+# ==========================
 uploaded_files = st.file_uploader(
     "Upload file laporan trading (CSV/XLSX)",
     type=["csv", "xlsx"],
     accept_multiple_files=True
 )
 
-
 def load_mt_report(file):
-    """Membaca file laporan MT4/MT5 dan mengembalikan info akun + DataFrame transaksi"""
     try:
         df_raw = pd.read_excel(file, header=None, dtype=str)
     except:
@@ -74,8 +75,6 @@ def load_mt_report(file):
         df_raw = pd.read_csv(file, header=None, dtype=str)
 
     name, account = None, None
-
-    # Cari 'Name:' dan 'Account:'
     for _, row in df_raw.iterrows():
         joined = " ".join([str(x).strip() for x in row if pd.notna(x)])
         if joined.lower().startswith("name:"):
@@ -83,7 +82,6 @@ def load_mt_report(file):
         elif joined.lower().startswith("account:"):
             account = joined.split(":", 1)[1].strip()
 
-    # Cari baris header tabel
     header_row = None
     for i, row in df_raw.iterrows():
         values = [str(x).strip() for x in row.tolist()]
@@ -105,9 +103,7 @@ def load_mt_report(file):
 
 
 def process_trades(df):
-    """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
-
     close_col = next((cols[k] for k in ["time.1", "close time", "close"] if k in cols), None)
     profit_col = next((cols[k] for k in ["profit", "net profit"] if k in cols), None)
     swap_col = next((cols[k] for k in cols if "swap" in k), None)
@@ -118,11 +114,9 @@ def process_trades(df):
 
     df[close_col] = pd.to_datetime(df[close_col], errors="coerce")
     df["CloseDate"] = df[close_col].dt.date
-
     df["Profit"] = pd.to_numeric(df[profit_col], errors="coerce").fillna(0)
     df["Swap"] = pd.to_numeric(df[swap_col], errors="coerce").fillna(0) if swap_col else 0
     df["Commission"] = pd.to_numeric(df[comm_col], errors="coerce").fillna(0) if comm_col else 0
-
     df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
 
     daily = df.groupby("CloseDate").agg(
@@ -131,19 +125,20 @@ def process_trades(df):
         Commission=("Commission", "sum"),
         NetProfit=("NetProfit", "sum")
     ).reset_index()
-
     return daily
 
 
-# Proses file
+# ==========================
+# Process uploaded files
+# ==========================
 if uploaded_files:
     for file in uploaded_files:
-        st.write(f"📑 File: {file.name}")
+        st.markdown(f'<p><i class="bi bi-file-earmark-text"></i> File: <b>{file.name}</b></p>', unsafe_allow_html=True)
 
         try:
             name, account, df = load_mt_report(file)
-            st.write(f"👤 Nama Klien: **{name or '-'}**")
-            st.write(f"🏦 Nomor Akun: **{account or '-'}**")
+            st.markdown(f'<p><i class="bi bi-person-circle"></i> Nama Klien: <b>{name or "-"}</b></p>', unsafe_allow_html=True)
+            st.markdown(f'<p><i class="bi bi-bank"></i> Nomor Akun: <b>{account or "-"}</b></p>', unsafe_allow_html=True)
 
             daily = process_trades(df)
 
@@ -152,40 +147,26 @@ if uploaded_files:
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
-
-            # Status dengan ikon bulat
-            if percent < 30:
-                status_html = '<span class="status-dot dot-pass"></span><b>PASS</b>'
-            else:
-                status_html = '<span class="status-dot dot-fail"></span><b>FAILED</b>'
+            status = "PASS ✅" if percent < 30 else "FAILED ❌"
 
             challenge_80 = total_profit * 0.80
             fasttrack_90 = total_profit * 0.90
 
-            st.subheader("📊 Profit per hari (Net)")
-            st.dataframe(daily)
+            # ========== Metrics (pakai card) ==========
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.markdown(f'<div class="metric-card"><div class="metric-title"><i class="bi bi-cash-coin"></i> Total Profit</div><div class="metric-value">{total_profit:.2f}</div></div>', unsafe_allow_html=True)
+            with col2:
+                st.markdown(f'<div class="metric-card"><div class="metric-title"><i class="bi bi-graph-up"></i> Max Profit</div><div class="metric-value">{max_profit:.2f} ({max_date})</div></div>', unsafe_allow_html=True)
+            with col3:
+                st.markdown(f'<div class="metric-card"><div class="metric-title"><i class="bi bi-clipboard-check"></i> Status</div><div class="metric-value">{status}</div></div>', unsafe_allow_html=True)
 
-            # Grafik
-            st.subheader("📈 Grafik Profit Harian (Net)")
-            st.line_chart(daily.set_index("CloseDate")["NetProfit"])
+            # ========== Grafik ==========
+            st.subheader("📊 Grafik Profit Harian")
+            fig = px.bar(daily, x="CloseDate", y="NetProfit", title="Net Profit Harian", template="simple_white")
+            st.plotly_chart(fig, use_container_width=True)
 
-            # Ringkasan
-            st.markdown(
-                f"""
-                🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
-                💰 Total profit (Net): **{total_profit:.2f}**  
-                📉 Persentase: **{percent:.2f} %**  
-                📝 Status: {status_html}  
-                ✅ Cek {max_date} (Net): **{max_profit:.2f}**
-
-                ---
-                🎯 80% (challenge account): **{challenge_80:.2f}**  
-                🚀 90% (fast track): **{fasttrack_90:.2f}**
-                """,
-                unsafe_allow_html=True
-            )
-
-            # Download hasil
+            # ========== Download ==========
             output = io.BytesIO()
             daily_out = daily.copy()
             daily_out.insert(0, "Account", account or "-")
