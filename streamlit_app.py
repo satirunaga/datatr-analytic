@@ -3,24 +3,50 @@ import pandas as pd
 import io
 
 # ==========================
-# Tambah watermark logo di tengah
+# Styling Font, Warna & Icon
 # ==========================
 st.markdown(
     """
     <style>
-    .stApp {
-        background: none;
+    /* Import Google Font */
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Roboto', sans-serif;
     }
+
+    /* Warna judul */
+    .stApp h1, h2, h3, h4 {
+        color: #1E293B; /* abu gelap */
+        font-weight: 700;
+    }
+
+    /* Badge status */
+    .status-dot {
+        height: 14px;
+        width: 14px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 6px;
+    }
+    .dot-pass {
+        background-color: #16A34A; /* hijau */
+    }
+    .dot-fail {
+        background-color: #DC2626; /* merah */
+    }
+
+    /* Watermark logo */
     .stApp::before {
         content: "";
         position: fixed;
         top: 50%;
         left: 50%;
-        width: 600px;  /* ubah ukuran logo */
+        width: 600px;
         height: 600px;
         background: url("https://raw.githubusercontent.com/satirunaga/datatr-analytic/main/tplus_logoo.jpg") no-repeat center center;
         background-size: contain;
-        opacity: 0.3;   /* hanya logo yang transparan */
+        opacity: 0.25;
         transform: translate(-50%, -50%);
         z-index: -1;
     }
@@ -49,7 +75,7 @@ def load_mt_report(file):
 
     name, account = None, None
 
-    # Cari 'Name:' dan 'Account:' lebih fleksibel (gabungkan kolom)
+    # Cari 'Name:' dan 'Account:'
     for _, row in df_raw.iterrows():
         joined = " ".join([str(x).strip() for x in row if pd.notna(x)])
         if joined.lower().startswith("name:"):
@@ -68,7 +94,6 @@ def load_mt_report(file):
     if header_row is None:
         raise ValueError("Tidak menemukan header tabel transaksi.")
 
-    # Baca ulang mulai dari baris header_row
     file.seek(0)
     try:
         df = pd.read_excel(file, skiprows=header_row)
@@ -83,7 +108,6 @@ def process_trades(df):
     """Menghitung profit harian berdasarkan Close Time"""
     cols = {c.lower(): c for c in df.columns}
 
-    # Identifikasi kolom
     close_col = next((cols[k] for k in ["time.1", "close time", "close"] if k in cols), None)
     profit_col = next((cols[k] for k in ["profit", "net profit"] if k in cols), None)
     swap_col = next((cols[k] for k in cols if "swap" in k), None)
@@ -92,7 +116,6 @@ def process_trades(df):
     if close_col is None or profit_col is None:
         raise ValueError("Kolom Time/Close atau Profit tidak ditemukan.")
 
-    # Parsing data
     df[close_col] = pd.to_datetime(df[close_col], errors="coerce")
     df["CloseDate"] = df[close_col].dt.date
 
@@ -102,7 +125,6 @@ def process_trades(df):
 
     df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
 
-    # Hitung profit harian
     daily = df.groupby("CloseDate").agg(
         GrossProfit=("Profit", "sum"),
         Swap=("Swap", "sum"),
@@ -113,7 +135,7 @@ def process_trades(df):
     return daily
 
 
-# Proses file yang diupload
+# Proses file
 if uploaded_files:
     for file in uploaded_files:
         st.write(f"📑 File: {file.name}")
@@ -125,36 +147,42 @@ if uploaded_files:
 
             daily = process_trades(df)
 
-            # Ringkasan
             total_profit = daily["NetProfit"].sum()
             max_row = daily.loc[daily["NetProfit"].idxmax()]
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
 
-            # Tentukan status
-            status = "✅ PASS" if percent < 30 else "❌ FAILED"
+            # Status dengan ikon bulat
+            if percent < 30:
+                status_html = '<span class="status-dot dot-pass"></span><b>PASS</b>'
+            else:
+                status_html = '<span class="status-dot dot-fail"></span><b>FAILED</b>'
 
-            # Target 80% & 90%
             challenge_80 = total_profit * 0.80
             fasttrack_90 = total_profit * 0.90
 
-            # Tampilkan hasil
             st.subheader("📊 Profit per hari (Net)")
             st.dataframe(daily)
 
+            # Grafik
+            st.subheader("📈 Grafik Profit Harian (Net)")
+            st.line_chart(daily.set_index("CloseDate")["NetProfit"])
+
+            # Ringkasan
             st.markdown(
                 f"""
                 🔥 Profit harian terbesar (Net): **{max_profit:.2f}** pada **{max_date}**  
                 💰 Total profit (Net): **{total_profit:.2f}**  
-                📈 Persentase: **{percent:.2f} %**  
-                📝 Status: **{status}**  
+                📉 Persentase: **{percent:.2f} %**  
+                📝 Status: {status_html}  
                 ✅ Cek {max_date} (Net): **{max_profit:.2f}**
 
                 ---
                 🎯 80% (challenge account): **{challenge_80:.2f}**  
                 🚀 90% (fast track): **{fasttrack_90:.2f}**
-                """
+                """,
+                unsafe_allow_html=True
             )
 
             # Download hasil
