@@ -4,10 +4,11 @@ import io
 import plotly.express as px
 
 # ==========================
-# Tambah watermark logo di tengah
+# CSS Styling + FontAwesome
 # ==========================
 st.markdown(
     """
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
     .stApp {
         background: none;
@@ -18,28 +19,44 @@ st.markdown(
         position: fixed;
         top: 50%;
         left: 50%;
-        width: 600px;
-        height: 600px;
+        width: 800px;
+        height: 800px;
         background: url("https://raw.githubusercontent.com/satirunaga/datatr-analytic/main/tplus_logoo.jpg") no-repeat center center;
         background-size: contain;
-        opacity: 0.2;
+        opacity: 0.08;  /* lebih samar */
         transform: translate(-50%, -50%);
         z-index: -1;
     }
-    /* Card style */
+    /* Card layout */
+    .metrics-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
     .metric-card {
         background: #ffffff;
-        padding: 20px;
+        padding: 18px;
         border-radius: 12px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.06);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .metric-icon {
+        font-size: 20px;
+        color: #2563eb; /* biru profesional */
+    }
+    .metric-content {
+        display: flex;
+        flex-direction: column;
     }
     .metric-title {
-        font-size: 14px;
+        font-size: 13px;
         color: #666;
     }
     .metric-value {
-        font-size: 20px;
+        font-size: 18px;
         font-weight: 600;
         color: #222;
     }
@@ -132,17 +149,13 @@ def process_trades(df):
 # Proses file yang diupload
 if uploaded_files:
     for file in uploaded_files:
-        st.markdown('<div class="metric-card">📄 <span class="metric-title">File:</span> '
-                    f'<span class="metric-value">{file.name}</span></div>', unsafe_allow_html=True)
+        st.markdown(f"<p><b>📄 File:</b> {file.name}</p>", unsafe_allow_html=True)
 
         try:
             name, account, df = load_mt_report(file)
 
-            st.markdown('<div class="metric-card">👤 <span class="metric-title">Nama Klien:</span> '
-                        f'<span class="metric-value">{name or "-"}</span></div>', unsafe_allow_html=True)
-
-            st.markdown('<div class="metric-card">🏦 <span class="metric-title">Nomor Akun:</span> '
-                        f'<span class="metric-value">{account or "-"}</span></div>', unsafe_allow_html=True)
+            st.markdown(f"<p><b>👤 Nama Klien:</b> {name or '-'}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p><b>🏦 Nomor Akun:</b> {account or '-'}</p>", unsafe_allow_html=True)
 
             daily = process_trades(df)
 
@@ -152,8 +165,7 @@ if uploaded_files:
             max_profit = max_row["NetProfit"]
             max_date = max_row["CloseDate"]
             percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
-
-            status = "✅ PASS" if percent < 30 else "❌ FAILED"
+            status = "PASS" if percent < 30 else "FAILED"
 
             challenge_80 = total_profit * 0.80
             fasttrack_90 = total_profit * 0.90
@@ -162,32 +174,60 @@ if uploaded_files:
             st.subheader("📊 Profit per Hari (Net)")
             st.dataframe(daily)
 
-            # Grafik
-            fig = px.bar(daily, x="CloseDate", y="NetProfit",
-                         title="Grafik Profit Harian (Net)",
-                         labels={"NetProfit": "Net Profit", "CloseDate": "Tanggal"})
+            # Grafik line chart
+            fig = px.line(daily, x="CloseDate", y="NetProfit",
+                          title="Grafik Profit Harian (Net)",
+                          markers=True,
+                          labels={"NetProfit": "Net Profit", "CloseDate": "Tanggal"})
             st.plotly_chart(fig, use_container_width=True)
 
-            # Metrics
+            # Metrics Cards
             st.markdown(
                 f"""
-                <div class="metric-card">🔥 <span class="metric-title">Profit Harian Terbesar:</span> 
-                <span class="metric-value">{max_profit:.2f} pada {max_date}</span></div>
-                
-                <div class="metric-card">💰 <span class="metric-title">Total Profit (Net):</span> 
-                <span class="metric-value">{total_profit:.2f}</span></div>
-                
-                <div class="metric-card">📈 <span class="metric-title">Persentase:</span> 
-                <span class="metric-value">{percent:.2f}%</span></div>
-                
-                <div class="metric-card">📋 <span class="metric-title">Status:</span> 
-                <span class="metric-value">{status}</span></div>
-                
-                <div class="metric-card">🎯 <span class="metric-title">80% Challenge:</span> 
-                <span class="metric-value">{challenge_80:.2f}</span></div>
-                
-                <div class="metric-card">🚀 <span class="metric-title">90% Fast Track:</span> 
-                <span class="metric-value">{fasttrack_90:.2f}</span></div>
+                <div class="metrics-container">
+                    <div class="metric-card">
+                        <i class="fa-solid fa-fire metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">Profit Harian Terbesar</span>
+                            <span class="metric-value">{max_profit:.2f} ({max_date})</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <i class="fa-solid fa-sack-dollar metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">Total Profit (Net)</span>
+                            <span class="metric-value">{total_profit:.2f}</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <i class="fa-solid fa-chart-line metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">Persentase</span>
+                            <span class="metric-value">{percent:.2f}%</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <i class="fa-solid fa-clipboard-check metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">Status</span>
+                            <span class="metric-value">{status}</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <i class="fa-solid fa-bullseye metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">80% Challenge</span>
+                            <span class="metric-value">{challenge_80:.2f}</span>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <i class="fa-solid fa-rocket metric-icon"></i>
+                        <div class="metric-content">
+                            <span class="metric-title">90% Fast Track</span>
+                            <span class="metric-value">{fasttrack_90:.2f}</span>
+                        </div>
+                    </div>
+                </div>
                 """,
                 unsafe_allow_html=True
             )
