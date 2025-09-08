@@ -117,4 +117,65 @@ def load_mt_report(file):
 
 def process_trades(df):
     """Menghitung profit harian berdasarkan Open Time"""
-    cols = {c
+    cols = {c.lower(): c for c in df.columns}
+
+    open_col = next((cols[k] for k in ["time", "open time", "open"] if k in cols), None)
+    profit_col = next((cols[k] for k in ["profit", "net profit"] if k in cols), None)
+    swap_col = next((cols[k] for k in cols if "swap" in k), None)
+    comm_col = next((cols[k] for k in cols if "commission" in k or "comm" in k), None)
+
+    if open_col is None or profit_col is None:
+        raise ValueError("Kolom Open Time atau Profit tidak ditemukan.")
+
+    df[open_col] = pd.to_datetime(df[open_col], errors="coerce")
+    df["OpenDate"] = df[open_col].dt.date
+
+    df["Profit"] = pd.to_numeric(df[profit_col], errors="coerce").fillna(0)
+    df["Swap"] = pd.to_numeric(df[swap_col], errors="coerce").fillna(0) if swap_col else 0
+    df["Commission"] = pd.to_numeric(df[comm_col], errors="coerce").fillna(0) if comm_col else 0
+
+    df["NetProfit"] = df["Profit"] + df["Swap"] + df["Commission"]
+
+    daily = df.groupby("OpenDate").agg(
+        GrossProfit=("Profit", "sum"),
+        Swap=("Swap", "sum"),
+        Commission=("Commission", "sum"),
+        NetProfit=("NetProfit", "sum")
+    ).reset_index()
+
+    return daily
+
+
+# Proses file yang diupload
+if uploaded_files:
+    for file in uploaded_files:
+        st.markdown(f"<p><b>📄 File:</b> {file.name}</p>", unsafe_allow_html=True)
+
+        try:
+            name, account, df = load_mt_report(file)
+
+            st.markdown(f"<p><b>👤 Nama Klien:</b> {name or '-'}</p>", unsafe_allow_html=True)
+            st.markdown(f"<p><b>🏦 Nomor Akun:</b> {account or '-'}</p>", unsafe_allow_html=True)
+
+            daily = process_trades(df)
+
+            # Ringkasan
+            total_profit = daily["NetProfit"].sum()
+            max_row = daily.loc[daily["NetProfit"].idxmax()]
+            max_profit = max_row["NetProfit"]
+            max_date = max_row["OpenDate"]
+            percent = (max_profit / total_profit) * 100 if total_profit != 0 else 0
+            status = "PASS" if percent < 30 else "FAILED"
+
+            challenge_80 = total_profit * 0.80
+            fasttrack_90 = total_profit * 0.90
+
+            # Tabel
+            st.subheader("📊 Profit per Hari (Net, berdasarkan Open Time)")
+            st.dataframe(daily)
+
+            # Grafik line chart
+            fig = px.line(daily, x="OpenDate", y="NetProfit",
+                          title="Grafik Profit Harian (Net, berdasarkan Open Time)",
+                          markers=True,
+                          labels={"NetProfit": "Net Profit",
